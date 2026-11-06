@@ -1,9 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
+  // PGlite (local embedded Postgres) ships WASM + data files; keep it out of the bundle.
+  serverExternalPackages: ["@electric-sql/pglite"],
   turbopack: {
     rules: {
       "*.css": {
