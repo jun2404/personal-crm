@@ -124,3 +124,7 @@ To point local development at Supabase instead, add `DATABASE_URL=...` to `.env.
 - Tables are created automatically (`src/db/schema.ts` → `SCHEMA_SQL`), with row-level security enabled so Supabase's public API can't read them
 - Single-user password login: HMAC-signed cookie checked in `src/proxy.ts` and again in every server action
 - Key folders: `src/app/(app)` pages · `src/app/actions.ts` all writes · `src/lib/server/data.ts` all reads · `src/lib/crm.ts` shared rules (sources, roles, reminders)
+
+## License
+
+MIT. See [LICENSE](LICENSE).
