@@ -54,11 +54,10 @@ export function TopNav() {
           <form action={logout}>
             <button
               type="submit"
-              className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label="Sign out"
-              title="Sign out"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <LogOut className="size-4" />
+              Sign out
             </button>
           </form>
         </div>
