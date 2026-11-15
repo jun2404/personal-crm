@@ -21,7 +21,17 @@ async function connect(): Promise<DB> {
     const { drizzle } = await import("drizzle-orm/postgres-js");
     const client = postgres(url, { prepare: false, max: 3 });
     const db = drizzle(client, { schema });
-    await ensureSchema(db);
+    // Simple protocol sends every statement in one message: one database trip.
+    try {
+      await ensureSchema(async (script) => {
+        await client.unsafe(script).simple();
+      });
+    } catch (err) {
+      // Never let the faster path take the app down: fall back to the old
+      // statement-by-statement setup, and log why so it shows in Vercel's logs.
+      console.error("One-trip schema setup failed; using the step-by-step setup instead.", err);
+      await ensureSchemaStepByStep(db);
+    }
     return db;
   }
 
@@ -38,13 +48,25 @@ async function connect(): Promise<DB> {
   fs.mkdirSync(dataDir, { recursive: true });
   const client = new PGlite(dataDir);
   const db = drizzle(client, { schema }) as unknown as DB;
-  await ensureSchema(db);
+  await ensureSchema(async (script) => {
+    await client.exec(script);
+  });
   return db;
 }
 
-async function ensureSchema(db: DB) {
+/**
+ * Creates the tables if they're missing, in a single database trip.
+ * Several statements sent together run as one transaction, and the advisory
+ * lock stops two cold starts from racing on CREATE TABLE. Every statement in
+ * SCHEMA_SQL is idempotent, so running it on every cold start is safe.
+ */
+async function ensureSchema(runScript: (script: string) => Promise<void>) {
+  await runScript(`select pg_advisory_xact_lock(727274);\n${schema.SCHEMA_SQL}`);
+}
+
+/** The previous setup: one database trip per statement. Kept only as a fallback. */
+async function ensureSchemaStepByStep(db: DB) {
   await db.transaction(async (tx) => {
-    // Serialise concurrent cold starts so two instances don't race on CREATE TABLE.
     await tx.execute(`select pg_advisory_xact_lock(727274)`);
     for (const stmt of schema.SCHEMA_SQL.split(";").map((s) => s.trim()).filter(Boolean)) {
       await tx.execute(stmt);

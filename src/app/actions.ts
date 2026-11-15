@@ -73,6 +73,19 @@ export async function logout() {
   redirect("/login");
 }
 
+// ---------------------------------------------------------------- page refresh
+
+// Pages that list contacts, and the route patterns for single contact / event pages.
+const LISTS = ["/", "/contacts", "/events"];
+const CONTACT_PAGES = "/(app)/contacts/[id]";
+const EVENT_PAGES = "/(app)/events/[id]";
+
+/** Refresh only the pages that show the data a save changed, not the whole app. */
+function refreshPages(paths: (string | null | undefined)[], patterns: string[] = []) {
+  for (const p of new Set(paths.filter((x): x is string => !!x))) revalidatePath(p);
+  for (const p of patterns) revalidatePath(p, "page");
+}
+
 // ---------------------------------------------------------------- contacts
 
 async function resolveEventId(fd: FormData): Promise<string | null> {
@@ -156,7 +169,7 @@ export async function createContact(_prev: FormState, fd: FormData): Promise<For
     .values({ ...data, eventId })
     .returning({ id: contacts.id });
 
-  revalidatePath("/", "layout");
+  refreshPages([...LISTS, eventId && `/events/${eventId}`]);
   if (fd.get("intent") === "another") {
     return { ok: true, savedName: data.fullName };
   }
@@ -180,7 +193,7 @@ export async function updateContact(id: string, _prev: FormState, fd: FormData):
     .update(contacts)
     .set({ ...data, eventId, updatedAt: new Date() })
     .where(eq(contacts.id, id));
-  revalidatePath("/", "layout");
+  refreshPages([...LISTS, `/contacts/${id}`], [EVENT_PAGES]);
   redirect(`/contacts/${id}`);
 }
 
@@ -189,7 +202,7 @@ export async function deleteContact(id: string) {
   if (!isUuid(id)) return;
   const db = await getDb();
   await db.delete(contacts).where(eq(contacts.id, id));
-  revalidatePath("/", "layout");
+  refreshPages([...LISTS, `/contacts/${id}`], [EVENT_PAGES]);
   redirect("/contacts");
 }
 
@@ -198,7 +211,7 @@ export async function toggleStar(id: string) {
   if (!isUuid(id)) return;
   const db = await getDb();
   await db.update(contacts).set({ starred: sql`not ${contacts.starred}` }).where(eq(contacts.id, id));
-  revalidatePath("/", "layout");
+  refreshPages(["/", "/contacts", `/contacts/${id}`], [EVENT_PAGES]);
 }
 
 // ---------------------------------------------------------------- follow-ups
@@ -227,7 +240,7 @@ export async function logInteraction(contactId: string, _prev: FormState, fd: Fo
     note: str(fd, "note"),
   });
   await syncLastContacted(contactId);
-  revalidatePath("/", "layout");
+  refreshPages(["/", "/contacts", `/contacts/${contactId}`], [EVENT_PAGES]);
   return { ok: true };
 }
 
@@ -242,7 +255,7 @@ export async function quickCheckIn(contactId: string, kind: string) {
     occurredOn: await getToday(),
   });
   await syncLastContacted(contactId);
-  revalidatePath("/", "layout");
+  refreshPages(["/", "/contacts", `/contacts/${contactId}`], [EVENT_PAGES]);
 }
 
 export async function deleteInteraction(id: string, contactId: string) {
@@ -251,7 +264,7 @@ export async function deleteInteraction(id: string, contactId: string) {
   const db = await getDb();
   await db.delete(interactions).where(and(eq(interactions.id, id), eq(interactions.contactId, contactId)));
   await syncLastContacted(contactId);
-  revalidatePath("/", "layout");
+  refreshPages(["/", "/contacts", `/contacts/${contactId}`], [EVENT_PAGES]);
 }
 
 // ---------------------------------------------------------------- events
@@ -274,7 +287,7 @@ export async function saveEvent(id: string | null, _prev: FormState, fd: FormDat
     const [e] = await db.insert(events).values(values).returning({ id: events.id });
     eventId = e.id;
   }
-  revalidatePath("/", "layout");
+  refreshPages([...LISTS, `/events/${eventId}`], [CONTACT_PAGES]);
   redirect(`/events/${eventId}`);
 }
 
@@ -283,7 +296,7 @@ export async function deleteEvent(id: string) {
   if (!isUuid(id)) return;
   const db = await getDb();
   await db.delete(events).where(eq(events.id, id)); // contacts keep existing, event link is cleared
-  revalidatePath("/", "layout");
+  refreshPages([...LISTS, `/events/${id}`], [CONTACT_PAGES]);
   redirect("/events");
 }
 
@@ -369,6 +382,6 @@ export async function importContacts(
   for (let i = 0; i < toInsert.length; i += 200) {
     await db.insert(contacts).values(toInsert.slice(i, i + 200));
   }
-  revalidatePath("/", "layout");
+  refreshPages(LISTS, [EVENT_PAGES]);
   return { added: toInsert.length, skipped };
 }
