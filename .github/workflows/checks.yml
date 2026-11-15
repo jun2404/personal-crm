@@ -8,6 +8,10 @@ on:
     branches: [main]
   pull_request:
 
+# The job only reads the code; it never needs to write to the repo.
+permissions:
+  contents: read
+
 jobs:
   checks:
     name: Type check, lint and build
