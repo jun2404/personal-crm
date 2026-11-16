@@ -133,6 +133,27 @@ export function todayIn(timeZone: string | undefined): string {
   }
 }
 
+/** The calendar date (YYYY-MM-DD) of a moment, in the given timezone. */
+export function isoDateIn(at: Date | string, timeZone: string | undefined): string {
+  const d = typeof at === "string" ? new Date(at) : at;
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: timeZone || "UTC" }).format(d);
+  } catch {
+    return d.toISOString().slice(0, 10);
+  }
+}
+
+/** Clock time like "14:05" of a moment, in the given timezone. */
+export function formatTimeIn(at: Date | string, timeZone: string | undefined): string {
+  const d = typeof at === "string" ? new Date(at) : at;
+  const opts: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hour12: false };
+  try {
+    return d.toLocaleTimeString("en-GB", { ...opts, timeZone: timeZone || "UTC" });
+  } catch {
+    return d.toLocaleTimeString("en-GB", { ...opts, timeZone: "UTC" });
+  }
+}
+
 export function addDays(isoDate: string, days: number): string {
   const d = new Date(`${isoDate}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);

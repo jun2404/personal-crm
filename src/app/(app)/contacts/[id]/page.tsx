@@ -8,24 +8,96 @@ import { Avatar, DueText, RolePill, SourcePill, TagPill } from "@/components/crm
 import { InteractionForm } from "@/components/crm/interaction-form";
 import { ConfirmDelete } from "@/components/crm/confirm-button";
 import { StarButton } from "@/components/crm/star-button";
+import { TimelineList, type TimelineEntry } from "@/components/crm/timeline";
 import { deleteContact, deleteInteraction, logInteraction } from "@/app/actions";
 import { getContact } from "@/lib/server/data";
-import { getToday } from "@/lib/server/auth";
-import { daysBetween, followUpLabel, formatDate, kindLabel, relativeDays, roleLabel, telHref, whatsappHref } from "@/lib/crm";
+import { getTimeZone, getToday, requireUserId } from "@/lib/server/auth";
+import {
+  daysBetween,
+  followUpLabel,
+  formatDate,
+  formatTimeIn,
+  isoDateIn,
+  kindLabel,
+  relativeDays,
+  roleLabel,
+  sourceLabel,
+  telHref,
+  whatsappHref,
+} from "@/lib/crm";
 import { cn } from "@/lib/utils";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const uid = await requireUserId();
   const { id } = await params;
-  const data = await getContact(id, await getToday());
+  const data = await getContact(uid, id, await getToday());
   return { title: data?.contact.fullName ?? "Contact" };
 }
 
 export default async function ContactPage({ params }: { params: Promise<{ id: string }> }) {
+  const uid = await requireUserId();
   const { id } = await params;
   const today = await getToday();
-  const data = await getContact(id, today);
+  const data = await getContact(uid, id, today);
   if (!data) notFound();
   const { contact: c, interactions } = data;
+  const timeZone = await getTimeZone();
+
+  // Everything that happened with this person, newest first: check-ins, the day you met, the day you saved them.
+  const when = (date: string) => `${formatDate(date)} · ${relativeDays(daysBetween(today, date))}`;
+  const savedAt = new Date(c.createdAt);
+  const savedOn = isoDateIn(savedAt, timeZone);
+  const timeline: (TimelineEntry & { date: string; at: string })[] = [
+    ...interactions.map((i) => ({
+      key: i.id,
+      date: i.occurredOn,
+      at: new Date(i.createdAt).toISOString(),
+      tone: "interaction" as const,
+      kind: i.kind,
+      title: kindLabel(i.kind),
+      meta: when(i.occurredOn),
+      note: i.note,
+      action: (
+        <ConfirmDelete
+          compact
+          label="Remove check-in"
+          title="Remove this check-in?"
+          description="The follow-up reminder will be recalculated from the remaining history."
+          onConfirm={deleteInteraction.bind(null, i.id, c.id)}
+        />
+      ),
+    })),
+    // "Met" adds nothing when it's the same day you saved them and there's no event to name.
+    ...(c.metOn && (c.eventName || c.metOn !== savedOn)
+      ? [
+          {
+            key: "met",
+            date: c.metOn,
+            at: "", // on the same day, meeting comes before saving
+            tone: "met" as const,
+            title: c.eventName ? (
+              <>
+                Met at{" "}
+                <Link href={`/events/${c.eventId}`} className="hover:underline">
+                  {c.eventName}
+                </Link>
+              </>
+            ) : (
+              "Met"
+            ),
+            meta: when(c.metOn),
+          },
+        ]
+      : []),
+    {
+      key: "saved",
+      date: savedOn,
+      at: savedAt.toISOString(),
+      tone: "saved" as const,
+      title: "Saved to your CRM",
+      meta: `${when(savedOn)} at ${formatTimeIn(savedAt, timeZone)} · ${sourceLabel(c.source)}`,
+    },
+  ].sort((a, b) => b.date.localeCompare(a.date) || b.at.localeCompare(a.at));
 
   const tel = telHref(c.phone);
   const wa = whatsappHref(c.phone);
@@ -135,35 +207,10 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           </section>
 
           <section>
-            <h2 className="mb-3 text-sm font-semibold">History</h2>
-            {interactions.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No check-ins logged yet.</p>
-            ) : (
-              <ol className="relative space-y-4 border-l pl-5">
-                {interactions.map((i) => (
-                  <li key={i.id} className="relative">
-                    <span className="absolute top-1.5 -left-[25px] size-2.5 rounded-full border-2 border-background bg-primary" />
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-medium">
-                          {kindLabel(i.kind)}
-                          <span className="ml-2 font-normal text-muted-foreground">
-                            {formatDate(i.occurredOn)} · {relativeDays(daysBetween(today, i.occurredOn))}
-                          </span>
-                        </p>
-                        {i.note && <p className="mt-0.5 text-sm whitespace-pre-wrap text-muted-foreground">{i.note}</p>}
-                      </div>
-                      <ConfirmDelete
-                        compact
-                        label="Remove check-in"
-                        title="Remove this check-in?"
-                        description="The follow-up reminder will be recalculated from the remaining history."
-                        onConfirm={deleteInteraction.bind(null, i.id, c.id)}
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ol>
+            <h2 className="mb-3 text-sm font-semibold">Timeline</h2>
+            <TimelineList entries={timeline} />
+            {interactions.length === 0 && (
+              <p className="mt-4 text-sm text-muted-foreground">No check-ins logged yet. Log one under Stay in touch.</p>
             )}
           </section>
         </div>

@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 
-// Everything except the login page and public assets requires a valid session.
+// Everything except the sign-in / sign-up pages and public assets requires a valid session.
 export async function proxy(request: NextRequest) {
-  const ok = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
-  if (ok) return NextResponse.next();
+  const userId = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
+  if (userId) return NextResponse.next();
 
   const { pathname, search } = request.nextUrl;
   if (pathname.startsWith("/api/")) {
@@ -19,6 +19,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!login|_next/static|_next/image|favicon.ico|icon|apple-icon|manifest.webmanifest|robots.txt).*)",
+    "/((?!login|signup|_next/static|_next/image|favicon.ico|icon|apple-icon|manifest.webmanifest|robots.txt).*)",
   ],
 };

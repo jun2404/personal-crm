@@ -1,10 +1,12 @@
 import "server-only";
-import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import type { Contact, Event, Interaction } from "@/db/schema";
-import { daysBetween, followUpStatus, nextDueDate, type FollowUpStatus } from "@/lib/crm";
+import { daysBetween, followUpStatus, isoDateIn, nextDueDate, type FollowUpStatus } from "@/lib/crm";
 
 const { contacts, events, interactions } = schema;
+
+// Every function here takes the signed-in user's id and only ever reads that user's rows.
 
 export type ContactRow = Contact & {
   eventName: string | null;
@@ -35,18 +37,18 @@ function decorate(c: Contact & { eventName: string | null }, today: string): Con
   };
 }
 
-async function selectContacts(where: SQL | undefined) {
+async function selectContacts(userId: string, where?: SQL) {
   const db = await getDb();
   const rows = await db
     .select({ c: contacts, eventName: events.name })
     .from(contacts)
     .leftJoin(events, eq(contacts.eventId, events.id))
-    .where(where)
+    .where(and(eq(contacts.userId, userId), where))
     .orderBy(asc(contacts.fullName));
   return rows.map((r) => ({ ...r.c, eventName: r.eventName }));
 }
 
-export async function listContacts(f: ContactFilters, today: string): Promise<ContactRow[]> {
+export async function listContacts(userId: string, f: ContactFilters, today: string): Promise<ContactRow[]> {
   const conds: SQL[] = [];
   const q = f.q?.trim();
   if (q) {
@@ -66,13 +68,13 @@ export async function listContacts(f: ContactFilters, today: string): Promise<Co
   }
   if (f.source) conds.push(eq(contacts.source, f.source));
   if (f.role) conds.push(eq(contacts.roleCategory, f.role));
-  if (f.event) conds.push(eq(contacts.eventId, f.event));
+  if (f.event && isUuid(f.event)) conds.push(eq(contacts.eventId, f.event));
   if (f.company) conds.push(sql`lower(${contacts.company}) = lower(${f.company})`);
   if (f.tag) conds.push(sql`${f.tag} = any(${contacts.tags})`);
   if (f.status === "starred") conds.push(eq(contacts.starred, true));
   if (f.status === "never") conds.push(sql`${contacts.lastContactedOn} is null`);
 
-  let rows = (await selectContacts(conds.length ? and(...conds) : undefined)).map((c) => decorate(c, today));
+  let rows = (await selectContacts(userId, conds.length ? and(...conds) : undefined)).map((c) => decorate(c, today));
 
   if (f.status === "overdue") rows = rows.filter((r) => r.status === "overdue");
   if (f.status === "due_soon") rows = rows.filter((r) => r.status === "due_soon");
@@ -97,8 +99,8 @@ export async function listContacts(f: ContactFilters, today: string): Promise<Co
   return rows;
 }
 
-export async function getDashboard(today: string) {
-  const all = (await selectContacts(undefined)).map((c) => decorate(c, today));
+export async function getDashboard(userId: string, today: string) {
+  const all = (await selectContacts(userId)).map((c) => decorate(c, today));
   const byDue = (a: ContactRow, b: ContactRow) => (a.daysUntilDue ?? 0) - (b.daysUntilDue ?? 0);
   const monthStart = today.slice(0, 8) + "01";
   return {
@@ -112,9 +114,9 @@ export async function getDashboard(today: string) {
   };
 }
 
-export async function getContact(id: string, today: string) {
+export async function getContact(userId: string, id: string, today: string) {
   if (!isUuid(id)) return null;
-  const [c] = await selectContacts(eq(contacts.id, id));
+  const [c] = await selectContacts(userId, eq(contacts.id, id));
   if (!c) return null;
   const db = await getDb();
   const log: Interaction[] = await db
@@ -125,35 +127,52 @@ export async function getContact(id: string, today: string) {
   return { contact: decorate(c, today), interactions: log };
 }
 
+/** True if this contact exists and belongs to the user. */
+export async function ownsContact(userId: string, id: string): Promise<boolean> {
+  if (!isUuid(id)) return false;
+  const db = await getDb();
+  const [row] = await db
+    .select({ id: contacts.id })
+    .from(contacts)
+    .where(and(eq(contacts.id, id), eq(contacts.userId, userId)));
+  return !!row;
+}
+
 export type EventRow = Event & { contactCount: number };
 
-export async function listEvents(): Promise<EventRow[]> {
+export async function listEvents(userId: string): Promise<EventRow[]> {
   const db = await getDb();
   const rows = await db
     .select({ e: events, n: sql<number>`count(${contacts.id})::int` })
     .from(events)
     .leftJoin(contacts, eq(contacts.eventId, events.id))
+    .where(eq(events.userId, userId))
     .groupBy(events.id)
     .orderBy(sql`${events.date} desc nulls last`, desc(events.createdAt));
   return rows.map((r) => ({ ...r.e, contactCount: r.n }));
 }
 
-export async function getEvent(id: string) {
+export async function getEvent(userId: string, id: string) {
   if (!isUuid(id)) return null;
   const db = await getDb();
-  const [e] = await db.select().from(events).where(eq(events.id, id));
+  const [e] = await db
+    .select()
+    .from(events)
+    .where(and(eq(events.id, id), eq(events.userId, userId)));
   return e ?? null;
 }
 
-export async function getFilterOptions() {
+export async function getFilterOptions(userId: string) {
   const db = await getDb();
   const [companies, tags] = await Promise.all([
     db
       .selectDistinct({ v: contacts.company })
       .from(contacts)
-      .where(sql`coalesce(${contacts.company}, '') <> ''`)
+      .where(and(eq(contacts.userId, userId), sql`coalesce(${contacts.company}, '') <> ''`))
       .orderBy(asc(contacts.company)),
-    db.execute<{ v: string }>(sql`select distinct unnest(tags) as v from contacts order by 1`),
+    db.execute<{ v: string }>(
+      sql`select distinct unnest(tags) as v from contacts where user_id = ${userId} order by 1`,
+    ),
   ]);
   const tagRows = (Array.isArray(tags) ? tags : (tags as { rows: { v: string }[] }).rows) as { v: string }[];
   return {
@@ -162,10 +181,149 @@ export async function getFilterOptions() {
   };
 }
 
-export async function getAllContactsForExport() {
-  return selectContacts(undefined);
+export async function getAllContactsForExport(userId: string) {
+  return selectContacts(userId);
+}
+
+// ---------------------------------------------------------------- timeline
+
+type Person = { id: string; name: string; company: string | null; event: string | null };
+
+export type TimelineItem =
+  | {
+      type: "saved";
+      key: string;
+      /** Calendar day in the user's timezone. */
+      date: string;
+      /** Exact moment (ISO), for ordering within a day and showing the time. */
+      at: string;
+      /** How many contacts were saved in this minute (imports save many at once). */
+      count: number;
+      /** Up to 5 of them, newest first. */
+      people: Person[];
+      source: string;
+    }
+  | {
+      type: "interaction";
+      key: string;
+      date: string;
+      at: string;
+      id: string;
+      kind: string;
+      note: string | null;
+      person: Person;
+    };
+
+export type TimelineFilter = "all" | "saved" | "interactions";
+
+const parseJson = <T,>(v: unknown): T => (typeof v === "string" ? JSON.parse(v) : v) as T;
+
+/**
+ * Everything that happened across all of the user's contacts, newest first:
+ * when each contact was saved, and every check-in logged with them.
+ */
+export async function getTimeline(
+  userId: string,
+  timeZone: string,
+  opts: { limit: number; filter: TimelineFilter },
+): Promise<{ items: TimelineItem[]; hasMore: boolean }> {
+  const db = await getDb();
+  const limit = Math.max(1, Math.min(1000, opts.limit));
+  const iso = (col: SQL | AnyColumn) =>
+    sql<string>`to_char(${col} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+
+  const [saved, logged] = await Promise.all([
+    opts.filter === "interactions"
+      ? []
+      : db
+          .select({
+            at: iso(sql`max(${contacts.createdAt})`),
+            count: sql<number>`count(*)::int`,
+            source: sql<string>`mode() within group (order by ${contacts.source})`,
+            people: sql<unknown>`json_agg(json_build_object('id', ${contacts.id}, 'name', ${contacts.fullName}, 'company', ${contacts.company}, 'event', ${events.name}) order by ${contacts.createdAt} desc)`,
+          })
+          .from(contacts)
+          .leftJoin(events, eq(contacts.eventId, events.id))
+          .where(eq(contacts.userId, userId))
+          .groupBy(sql`date_trunc('minute', ${contacts.createdAt})`)
+          .orderBy(desc(sql`date_trunc('minute', ${contacts.createdAt})`))
+          .limit(limit + 1),
+    opts.filter === "saved"
+      ? []
+      : db
+          .select({
+            id: interactions.id,
+            kind: interactions.kind,
+            note: interactions.note,
+            date: interactions.occurredOn,
+            at: iso(interactions.createdAt),
+            personId: contacts.id,
+            name: contacts.fullName,
+            company: contacts.company,
+          })
+          .from(interactions)
+          .innerJoin(contacts, eq(interactions.contactId, contacts.id))
+          .where(eq(contacts.userId, userId))
+          .orderBy(desc(interactions.occurredOn), desc(interactions.createdAt))
+          .limit(limit + 1),
+  ]);
+
+  const items: TimelineItem[] = [
+    ...saved.map((s): TimelineItem => {
+      const people = parseJson<Person[]>(s.people);
+      return {
+        type: "saved",
+        key: `s:${s.at}:${people[0]?.id}`,
+        date: isoDateIn(s.at, timeZone),
+        at: s.at,
+        count: s.count,
+        people: people.slice(0, 5),
+        source: s.source,
+      };
+    }),
+    ...logged.map(
+      (i): TimelineItem => ({
+        type: "interaction",
+        key: `i:${i.id}`,
+        date: i.date,
+        at: i.at,
+        id: i.id,
+        kind: i.kind,
+        note: i.note,
+        person: { id: i.personId, name: i.name, company: i.company, event: null },
+      }),
+    ),
+  ];
+  sortTimeline(items);
+  return { items: items.slice(0, limit), hasMore: items.length > limit };
+}
+
+/** Newest day first; within a day, the most recently recorded first. */
+export function sortTimeline<T extends { date: string; at: string }>(items: T[]): T[] {
+  return items.sort((a, b) => b.date.localeCompare(a.date) || b.at.localeCompare(a.at));
 }
 
 export function isUuid(v: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+}
+
+/**
+ * True while contacts saved before accounts existed are still waiting for an owner,
+ * and the old APP_PASSWORD is set so the original owner can claim them at sign-up.
+ */
+export async function hasUnclaimedData(): Promise<boolean> {
+  if (!process.env.APP_PASSWORD) return false;
+  const db = await getDb();
+  const [row] = await db
+    .select({ one: sql<number>`1` })
+    .from(contacts)
+    .where(sql`${contacts.userId} is null`)
+    .limit(1);
+  if (row) return true;
+  const [ev] = await db
+    .select({ one: sql<number>`1` })
+    .from(events)
+    .where(sql`${events.userId} is null`)
+    .limit(1);
+  return !!ev;
 }

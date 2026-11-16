@@ -1,11 +1,12 @@
 // Signed session cookie using Web Crypto, so it works in proxy.ts and on the server.
-// Format: "<expiresAtMs>.<base64url HMAC-SHA256(expiresAtMs)>"
+// Format: "<userId>.<expiresAtMs>.<base64url HMAC-SHA256("<userId>.<expiresAtMs>")>"
 
 export const SESSION_COOKIE = "crm_session";
 export const TZ_COOKIE = "crm_tz";
 export const SESSION_MAX_AGE_S = 60 * 60 * 24 * 90; // 90 days, so your phone stays signed in
 
 const enc = new TextEncoder();
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function getSecret(): string | null {
   const s = process.env.SESSION_SECRET;
@@ -33,26 +34,30 @@ function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-export async function createSessionToken(): Promise<string> {
+export async function createSessionToken(userId: string): Promise<string> {
   const secret = getSecret();
   if (!secret) throw new Error("SESSION_SECRET must be set (16+ characters).");
-  const expires = String(Date.now() + SESSION_MAX_AGE_S * 1000);
-  return `${expires}.${await hmac(secret, expires)}`;
+  if (!UUID_RE.test(userId)) throw new Error("Invalid user id.");
+  const payload = `${userId}.${Date.now() + SESSION_MAX_AGE_S * 1000}`;
+  return `${payload}.${await hmac(secret, payload)}`;
 }
 
-export async function verifySessionToken(token: string | undefined | null): Promise<boolean> {
+/** Returns the signed-in user's id, or null if the token is missing, expired or forged. */
+export async function verifySessionToken(token: string | undefined | null): Promise<string | null> {
   const secret = getSecret();
-  if (!secret || !token) return false;
-  const dot = token.indexOf(".");
-  if (dot <= 0) return false;
-  const expires = token.slice(0, dot);
-  const sig = token.slice(dot + 1);
-  if (!/^\d+$/.test(expires) || Number(expires) < Date.now()) return false;
-  return safeEqual(sig, await hmac(secret, expires));
+  if (!secret || !token) return null;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [userId, expires, sig] = parts;
+  if (!UUID_RE.test(userId) || !/^\d+$/.test(expires) || Number(expires) < Date.now()) return null;
+  return safeEqual(sig, await hmac(secret, `${userId}.${expires}`)) ? userId : null;
 }
 
-/** Constant-time password comparison via HMAC digests (equal length). */
-export async function passwordMatches(input: string): Promise<boolean> {
+/**
+ * Checks the old single-user APP_PASSWORD (constant time, via HMAC digests of equal length).
+ * Only used to let the original owner move their existing contacts into a new account.
+ */
+export async function legacyPasswordMatches(input: string): Promise<boolean> {
   const expected = process.env.APP_PASSWORD;
   if (!expected) return false;
   const k = "crm-password-compare";

@@ -5,7 +5,6 @@ import type { NextConfig } from "next";
 // Only checks that the values exist; it never prints them.
 if (process.env.VERCEL_ENV === "production") {
   const problems: string[] = [];
-  if (!process.env.APP_PASSWORD) problems.push("APP_PASSWORD is not set");
   if ((process.env.SESSION_SECRET ?? "").length < 16) {
     problems.push("SESSION_SECRET is not set or is shorter than 16 characters");
   }

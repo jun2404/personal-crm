@@ -2,16 +2,29 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarDays, Home, LogOut, Plus, Upload, Users } from "lucide-react";
+import { CalendarDays, Download, History, Home, LogOut, Plus, Upload, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout } from "@/app/actions";
+import { Avatar } from "@/components/crm/bits";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+export type NavUser = { name: string | null; email: string };
 
 const LINKS = [
   { href: "/", label: "Follow-ups", icon: Home },
   { href: "/contacts", label: "Contacts", icon: Users },
+  { href: "/timeline", label: "Timeline", icon: History },
   { href: "/events", label: "Events", icon: CalendarDays },
   { href: "/import", label: "Import", icon: Upload },
 ];
+// The phone tab bar has room for four tabs around the Add button; Import lives in the account menu there.
+const PHONE_TABS = LINKS.filter((l) => l.href !== "/import");
 
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
@@ -19,7 +32,7 @@ function isActive(pathname: string, href: string) {
   return pathname.startsWith(href);
 }
 
-export function TopNav() {
+export function TopNav({ user }: { user: NavUser }) {
   const pathname = usePathname();
   return (
     <header className="sticky top-0 z-30 border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
@@ -51,15 +64,7 @@ export function TopNav() {
           >
             <Plus className="size-4" /> Add contact
           </Link>
-          <form action={logout}>
-            <button
-              type="submit"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <LogOut className="size-4" />
-              Sign out
-            </button>
-          </form>
+          <AccountMenu user={user} />
         </div>
       </div>
     </header>
@@ -89,7 +94,7 @@ export function BottomNav() {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
       <div className="mx-auto flex max-w-md items-end">
-        {LINKS.slice(0, 2).map(tab)}
+        {PHONE_TABS.slice(0, 2).map(tab)}
         <Link
           href="/contacts/new"
           aria-label="Add contact"
@@ -97,8 +102,40 @@ export function BottomNav() {
         >
           <Plus className="size-7" />
         </Link>
-        {LINKS.slice(2).map(tab)}
+        {PHONE_TABS.slice(2).map(tab)}
       </div>
     </nav>
+  );
+}
+
+function AccountMenu({ user }: { user: NavUser }) {
+  const display = user.name || user.email;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="Account menu"
+        className="inline-flex h-8 items-center gap-2 rounded-full border py-0.5 pr-0.5 pl-0.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:pr-3"
+      >
+        <Avatar name={display} className="size-7 text-[11px]" />
+        <span className="hidden max-w-36 truncate md:inline">{user.name || user.email.split("@")[0]}</span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-60">
+        <div className="px-2 py-1.5">
+          {user.name && <p className="truncate text-sm font-medium">{user.name}</p>}
+          <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+        </div>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem render={<Link href="/import" />}>
+          <Upload /> Import contacts
+        </DropdownMenuItem>
+        <DropdownMenuItem render={<a href="/api/export" />}>
+          <Download /> Export CSV
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => logout()}>
+          <LogOut /> Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

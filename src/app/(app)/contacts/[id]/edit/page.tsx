@@ -4,14 +4,15 @@ import { ContactForm } from "@/components/crm/contact-form";
 import { PageHeader } from "@/components/crm/bits";
 import { updateContact } from "@/app/actions";
 import { getContact, listEvents } from "@/lib/server/data";
-import { getToday } from "@/lib/server/auth";
+import { getToday, requireUserId } from "@/lib/server/auth";
 
 export const metadata: Metadata = { title: "Edit contact" };
 
 export default async function EditContactPage({ params }: { params: Promise<{ id: string }> }) {
+  const uid = await requireUserId();
   const { id } = await params;
   const today = await getToday();
-  const [data, events] = await Promise.all([getContact(id, today), listEvents()]);
+  const [data, events] = await Promise.all([getContact(uid, id, today), listEvents(uid)]);
   if (!data) notFound();
   const c = data.contact;
 

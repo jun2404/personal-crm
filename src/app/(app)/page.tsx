@@ -3,12 +3,13 @@ import { ArrowRight } from "lucide-react";
 import { ContactCard } from "@/components/crm/contact-card";
 import { EmptyState, PageHeader } from "@/components/crm/bits";
 import { getDashboard } from "@/lib/server/data";
-import { getToday } from "@/lib/server/auth";
+import { getToday, requireUserId } from "@/lib/server/auth";
 import { cn } from "@/lib/utils";
 
 export default async function DashboardPage() {
+  const uid = await requireUserId();
   const today = await getToday();
-  const d = await getDashboard(today);
+  const d = await getDashboard(uid, today);
 
   if (d.total === 0) {
     return (

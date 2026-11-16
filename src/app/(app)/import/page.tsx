@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/crm/bits";
 import { listEvents } from "@/lib/server/data";
+import { requireUserId } from "@/lib/server/auth";
 import { Importer } from "./importer";
 
 export const metadata: Metadata = { title: "Import" };
 
 export default async function ImportPage() {
-  const events = await listEvents();
+  const uid = await requireUserId();
+  const events = await listEvents(uid);
   return (
     <div className="mx-auto max-w-2xl">
       <PageHeader title="Import contacts" description="Bring in your LinkedIn connections or any spreadsheet of contacts." />

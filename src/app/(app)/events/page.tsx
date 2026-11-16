@@ -4,12 +4,14 @@ import { CalendarDays, MapPin, Plus } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState, PageHeader } from "@/components/crm/bits";
 import { listEvents } from "@/lib/server/data";
+import { requireUserId } from "@/lib/server/auth";
 import { formatDate } from "@/lib/crm";
 
 export const metadata: Metadata = { title: "Events" };
 
 export default async function EventsPage() {
-  const events = await listEvents();
+  const uid = await requireUserId();
+  const events = await listEvents(uid);
   return (
     <>
       <PageHeader

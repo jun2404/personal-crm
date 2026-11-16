@@ -1,7 +1,5 @@
-import { cookies } from "next/headers";
 import { getContact } from "@/lib/server/data";
-import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
-import { getToday } from "@/lib/server/auth";
+import { getSessionUserId, getToday } from "@/lib/server/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -9,11 +7,10 @@ export const dynamic = "force-dynamic";
 const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/[,;]/g, (m) => `\\${m}`).replace(/\r?\n/g, "\\n");
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  if (!(await verifySessionToken((await cookies()).get(SESSION_COOKIE)?.value))) {
-    return new Response("Not signed in", { status: 401 });
-  }
+  const userId = await getSessionUserId();
+  if (!userId) return new Response("Not signed in", { status: 401 });
   const { id } = await ctx.params;
-  const data = await getContact(id, await getToday());
+  const data = await getContact(userId, id, await getToday());
   if (!data) return new Response("Not found", { status: 404 });
   const c = data.contact;
 

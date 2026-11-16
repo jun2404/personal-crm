@@ -8,19 +8,21 @@ import { ConfirmDelete } from "@/components/crm/confirm-button";
 import { EmptyState, PageHeader } from "@/components/crm/bits";
 import { deleteEvent } from "@/app/actions";
 import { getEvent, listContacts } from "@/lib/server/data";
-import { getToday } from "@/lib/server/auth";
+import { getToday, requireUserId } from "@/lib/server/auth";
 import { formatDate } from "@/lib/crm";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const uid = await requireUserId();
   const { id } = await params;
-  return { title: (await getEvent(id))?.name ?? "Event" };
+  return { title: (await getEvent(uid, id))?.name ?? "Event" };
 }
 
 export default async function EventPage({ params }: { params: Promise<{ id: string }> }) {
+  const uid = await requireUserId();
   const { id } = await params;
-  const event = await getEvent(id);
+  const event = await getEvent(uid, id);
   if (!event) notFound();
-  const people = await listContacts({ event: event.id, sort: "recent" }, await getToday());
+  const people = await listContacts(uid, { event: event.id, sort: "recent" }, await getToday());
 
   return (
     <>

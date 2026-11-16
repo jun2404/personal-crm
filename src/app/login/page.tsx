@@ -1,22 +1,30 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { hasUnclaimedData } from "@/lib/server/data";
+import { AuthShell } from "./auth-shell";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
+export const dynamic = "force-dynamic";
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
   const { next } = await searchParams;
+  const unclaimed = await hasUnclaimedData().catch((err) => {
+    console.error("Could not check for contacts saved before accounts existed.", err);
+    return false;
+  });
   return (
-    <main className="flex flex-1 items-center justify-center px-4 py-16">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <span className="mx-auto inline-flex size-12 items-center justify-center rounded-2xl bg-primary text-base font-bold text-primary-foreground">
-            PC
-          </span>
-          <h1 className="mt-4 text-2xl font-semibold tracking-tight">Personal CRM</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Everyone you&apos;ve met, and when to reach out next.</p>
-        </div>
-        <LoginForm next={next} />
-      </div>
-    </main>
+    <AuthShell active="login" next={next}>
+      {unclaimed && (
+        <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+          Personal CRM now has accounts. Used it before with a single password?{" "}
+          <Link href="/signup" className="font-medium underline underline-offset-2">
+            Create your account
+          </Link>{" "}
+          and your saved contacts come with you.
+        </p>
+      )}
+      <LoginForm next={next} />
+    </AuthShell>
   );
 }

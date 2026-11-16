@@ -7,7 +7,7 @@ import { ContactCard } from "@/components/crm/contact-card";
 import { ContactFilters, ViewControls } from "@/components/crm/contact-filters";
 import { EmptyState, PageHeader } from "@/components/crm/bits";
 import { getFilterOptions, listContacts, listEvents, type ContactRow } from "@/lib/server/data";
-import { getToday } from "@/lib/server/auth";
+import { getToday, requireUserId } from "@/lib/server/auth";
 import { ROLE_CATEGORIES, roleLabel, sourceLabel } from "@/lib/crm";
 
 export const metadata: Metadata = { title: "Contacts" };
@@ -16,6 +16,7 @@ type SP = Record<string, string | string[] | undefined>;
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || undefined;
 
 export default async function ContactsPage({ searchParams }: { searchParams: Promise<SP> }) {
+  const uid = await requireUserId();
   const sp = await searchParams;
   const today = await getToday();
   const filters = {
@@ -29,7 +30,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
     sort: one(sp.sort),
   };
   const group = one(sp.group);
-  const [rows, events, opts] = await Promise.all([listContacts(filters, today), listEvents(), getFilterOptions()]);
+  const [rows, events, opts] = await Promise.all([listContacts(uid, filters, today), listEvents(uid), getFilterOptions(uid)]);
   const filtered = Object.entries(filters).some(([k, v]) => v && k !== "sort");
 
   return (

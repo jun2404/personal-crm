@@ -1,6 +1,6 @@
 # Personal CRM
 
-A private CRM for the people you meet at networking events, on LinkedIn, at meetups and on WhatsApp.
+A private CRM, with an account for each person who uses it, for the people you meet at networking events, on LinkedIn, at meetups and on WhatsApp.
 It reminds you when to get back in touch, so contacts stop slipping away.
 
 **What it does**
@@ -10,7 +10,9 @@ It reminds you when to get back in touch, so contacts stop slipping away.
 - **Fast entry at events**: create the event first, then use *Add someone I met here* → **Save & add another**. Source, event and date stay filled in between people.
 - **Role detection**: types "Co-founder & CMO" and it files them under Founder automatically. You can override it.
 - **Duplicate check**: warns you if the phone, email or LinkedIn is already saved, even when the number is written differently.
-- **Contact page**: call, WhatsApp, LinkedIn, email, **Save to phone contacts** (.vcf), notes and a history of every check-in.
+- **Accounts**: anyone can sign up with an email and password. Each account only ever sees its own contacts, events and check-ins.
+- **Timeline**: one feed of who you saved and every interaction you logged, grouped by day. Each contact page also has its own timeline: when you met, when you saved them, and every check-in since.
+- **Contact page**: call, WhatsApp, LinkedIn, email, **Save to phone contacts** (.vcf), notes and the contact's timeline.
 - **LinkedIn import**: upload LinkedIn's `Connections.csv` (or any CSV with a Name column). Already-saved people are skipped.
 - **Export**: download everything as a CSV backup at any time (Contacts → Export CSV).
 - **Works like an app on your phone**: add it to your home screen (see below).
@@ -60,12 +62,11 @@ git push -u origin main
 ### Step 3: Deploy on Vercel
 
 1. Go to <https://vercel.com>, sign up with GitHub, click **Add New → Project** and import `personal-crm`.
-2. Before clicking Deploy, open **Environment Variables** and add these three:
+2. Before clicking Deploy, open **Environment Variables** and add these two:
 
 | Name | Value |
 |---|---|
 | `DATABASE_URL` | the Supabase string from Step 1 |
-| `APP_PASSWORD` | the password you'll type to sign in. Make it long, since this app holds people's phone numbers. |
 | `SESSION_SECRET` | a long random string. Generate one with the command below. |
 
 ```bash
@@ -73,6 +74,9 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
 3. Click **Deploy**. After about a minute you get a link like `https://personal-crm-yourname.vercel.app`.
+4. Open it and choose **Create account**.
+
+**Upgrading from the single-password version?** Keep your old `APP_PASSWORD` set in Vercel. On **Create account**, open *Used this app before accounts existed?* and enter it: every contact and event saved so far moves into your new account. Once that's done you can delete `APP_PASSWORD`.
 
 ### Step 4: Add it to your phone's home screen
 
@@ -110,7 +114,7 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:3000>. The local password is in `.env.local` (`APP_PASSWORD`).
+Open <http://localhost:3000> and create an account.
 The very first page load takes ~30 seconds while the local database sets itself up.
 
 To point local development at Supabase instead, add `DATABASE_URL=...` to `.env.local`.
@@ -122,7 +126,7 @@ To point local development at Supabase instead, add `DATABASE_URL=...` to `.env.
 - Next.js 16 (App Router, server actions), TypeScript, Tailwind CSS v4, shadcn/ui (Base UI)
 - Drizzle ORM → Supabase Postgres via `postgres` (transaction pooler, `prepare: false`); PGlite locally
 - Tables are created automatically (`src/db/schema.ts` → `SCHEMA_SQL`), with row-level security enabled so Supabase's public API can't read them
-- Single-user password login: HMAC-signed cookie checked in `src/proxy.ts` and again in every server action
+- Email + password accounts (scrypt hashes in the `users` table). The session is an HMAC-signed cookie holding the user id, checked in `src/proxy.ts` and again in every page and server action, and every query is scoped to that user
 - Key folders: `src/app/(app)` pages · `src/app/actions.ts` all writes · `src/lib/server/data.ts` all reads · `src/lib/crm.ts` shared rules (sources, roles, reminders)
 
 ## License

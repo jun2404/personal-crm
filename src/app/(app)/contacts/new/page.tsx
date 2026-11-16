@@ -3,7 +3,7 @@ import { ContactForm } from "@/components/crm/contact-form";
 import { PageHeader } from "@/components/crm/bits";
 import { createContact } from "@/app/actions";
 import { listEvents } from "@/lib/server/data";
-import { getToday } from "@/lib/server/auth";
+import { getToday, requireUserId } from "@/lib/server/auth";
 
 export const metadata: Metadata = { title: "Add contact" };
 
@@ -12,8 +12,9 @@ export default async function NewContactPage({
 }: {
   searchParams: Promise<{ event?: string; source?: string }>;
 }) {
+  const uid = await requireUserId();
   const sp = await searchParams;
-  const [events, today] = await Promise.all([listEvents(), getToday()]);
+  const [events, today] = await Promise.all([listEvents(uid), getToday()]);
   const event = events.find((e) => e.id === sp.event);
 
   return (

@@ -1,6 +1,5 @@
-import { cookies } from "next/headers";
 import { getAllContactsForExport } from "@/lib/server/data";
-import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
+import { getSessionUserId } from "@/lib/server/auth";
 import { roleLabel, sourceLabel } from "@/lib/crm";
 
 export const dynamic = "force-dynamic";
@@ -14,10 +13,9 @@ function cell(v: unknown): string {
 }
 
 export async function GET() {
-  if (!(await verifySessionToken((await cookies()).get(SESSION_COOKIE)?.value))) {
-    return new Response("Not signed in", { status: 401 });
-  }
-  const rows = await getAllContactsForExport();
+  const userId = await getSessionUserId();
+  if (!userId) return new Response("Not signed in", { status: 401 });
+  const rows = await getAllContactsForExport(userId);
   const header = [
     "Name", "Company", "Title", "Role type", "Phone", "Email", "LinkedIn", "Met via", "Event",
     "Date met", "City", "Tags", "Follow-up every (days)", "Last contacted", "Starred", "Notes", "Added",

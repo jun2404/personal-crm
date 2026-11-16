@@ -10,19 +10,36 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-export const events = pgTable("events", {
+export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
-  date: date("date"),
-  location: text("location"),
-  notes: text("notes"),
+  /** Always stored lower-case. */
+  email: text("email").notNull().unique(),
+  name: text("name"),
+  passwordHash: text("password_hash").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const events = pgTable(
+  "events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Owner. Null only for rows saved before accounts existed, until they are claimed. */
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    date: date("date"),
+    location: text("location"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("events_user_idx").on(t.userId)],
+);
 
 export const contacts = pgTable(
   "contacts",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    /** Owner. Null only for rows saved before accounts existed, until they are claimed. */
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
     fullName: text("full_name").notNull(),
     company: text("company"),
     title: text("title"),
@@ -43,7 +60,7 @@ export const contacts = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [index("contacts_event_idx").on(t.eventId)],
+  (t) => [index("contacts_event_idx").on(t.eventId), index("contacts_user_idx").on(t.userId)],
 );
 
 export const interactions = pgTable(
@@ -61,6 +78,7 @@ export const interactions = pgTable(
   (t) => [index("interactions_contact_idx").on(t.contactId)],
 );
 
+export type User = typeof users.$inferSelect;
 export type Contact = typeof contacts.$inferSelect;
 export type NewContact = typeof contacts.$inferInsert;
 export type Event = typeof events.$inferSelect;
@@ -73,6 +91,14 @@ export type Interaction = typeof interactions.$inferSelect;
  * these tables; the app connects as the table owner, which bypasses RLS.
  */
 export const SCHEMA_SQL = `
+create table if not exists users (
+  id uuid primary key default gen_random_uuid(),
+  email text not null unique,
+  name text,
+  password_hash text not null,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists events (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -114,6 +140,14 @@ create table if not exists interactions (
   created_at timestamptz not null default now()
 );
 create index if not exists interactions_contact_idx on interactions(contact_id);
+
+-- Accounts (added later): every event and contact belongs to one user.
+alter table events add column if not exists user_id uuid references users(id) on delete cascade;
+alter table contacts add column if not exists user_id uuid references users(id) on delete cascade;
+create index if not exists events_user_idx on events(user_id);
+create index if not exists contacts_user_idx on contacts(user_id);
+
+alter table users enable row level security;
 
 alter table events enable row level security;
 alter table contacts enable row level security;
